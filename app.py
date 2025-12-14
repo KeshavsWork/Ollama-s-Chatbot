@@ -1,54 +1,116 @@
 import streamlit as st
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.llms import Ollama
-import os
-
 import os
 from dotenv import load_dotenv
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_community.llms import Ollama
+
+ 
+# Load environment variables
+ 
 load_dotenv()
 
-## Langsmith Tracking
-os.environ["LANGCHAIN_API_KEY"]=os.getenv("LANGCHAIN_API_KEY")
-os.environ["LANGCHAIN_TRACING_V2"]="true"
-os.environ["LANGCHAIN_PROJECT"]="Simple Q&A Chatbot With Ollama"
+# (Optional) LangSmith tracing – learning/debugging only
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_PROJECT"] = "Simple Q&A Chatbot With Ollama"
 
-## Prompt Template
-prompt=ChatPromptTemplate.from_messages(
-    [
-        ("system","You are a helpful massistant . Please  repsonse to the user queries"),
-        ("user","Question:{question}")
-    ]
+ 
+# Streamlit App Title
+ 
+st.title("Generative AI Chat Assistant")
+
+ 
+# Sidebar Controls
+ 
+llm_model = st.sidebar.selectbox(
+    "Select Open Source Model",
+    [ "mistral","llama3:latest", "gemma2:latest"]
 )
 
-def generate_response(question,llm,temperature,max_tokens):
-    llm=Ollama(model=llm)
-    output_parser=StrOutputParser()
-    chain=prompt|llm|output_parser
-    answer=chain.invoke({'question':question})
-    return answer
+temperature = st.sidebar.slider(
+    "Temperature",
+    min_value=0.0,
+    max_value=1.0,
+    value=0.7
+)
 
-## #Title of the app
-st.title("Enhanced Q&A Chatbot With Ollama")
+max_tokens = st.sidebar.slider(
+    "Max Tokens",
+    min_value=50,
+    max_value=300,
+    value=150
+)
 
+ 
+# Session-level Memory
+ 
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-## Select the OpenAI model
-llm=st.sidebar.selectbox("Select Open Source model",["gemma2:latest","llama3:latest","mistral"])
+ 
+# Response Generation Function
+ 
+def generate_response(question, model_name, history):
+    """
+    Generates response using session-level conversational context.
+    This is a learning-level memory implementation.
+    """
 
-## Adjust response parameter
-temperature=st.sidebar.slider("Temperature",min_value=0.0,max_value=1.0,value=0.7)
-max_tokens = st.sidebar.slider("Max Tokens", min_value=50, max_value=300, value=150)
+    llm = Ollama(
+        model=model_name,
+        temperature=temperature
+    )
 
-## MAin interface for user input
-st.write("Go ahead and ask any question")
-user_input=st.text_input("You:")
+    output_parser = StrOutputParser()
 
+    # Build messages dynamically using previous conversation
+    messages = [
+        ("system", "You are a helpful assistant. Answer clearly and concisely.")
+    ]
 
+    # Add previous conversation (session memory)
+    for user_q, assistant_a in history:
+        messages.append(("user", user_q))
+        messages.append(("assistant", assistant_a))
 
-if user_input :
-    response=generate_response(user_input,llm,temperature,max_tokens)
-    st.write(response)
-else:
-    st.write("Please provide the user input")
+    # Add current user question
+    messages.append(("user", question))
 
+    prompt = ChatPromptTemplate.from_messages(messages)
 
+    chain = prompt | llm | output_parser
+    response = chain.invoke({})
+
+    return response
+
+ 
+# User Input Section
+ 
+st.write("Ask a question below:")
+
+user_input = st.text_input("You:")
+
+ 
+# Generate & Display Response
+ 
+if user_input:
+    answer = generate_response(
+        user_input,
+        llm_model,
+        st.session_state.chat_history
+    )
+
+    # Store conversation in session memory
+    st.session_state.chat_history.append((user_input, answer))
+
+    st.markdown(f"**Bot:** {answer}")
+
+ 
+# Display Conversation History
+ 
+if st.session_state.chat_history:
+    st.subheader("Conversation History")
+    for q, a in st.session_state.chat_history:
+        st.markdown(f"**You:** {q}")
+        st.markdown(f"**Bot:** {a}")
